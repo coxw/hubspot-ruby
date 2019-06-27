@@ -12,6 +12,7 @@ module Hubspot
     DEAL_PATH = "/deals/v1/deal/:deal_id"
     RECENT_UPDATED_PATH = "/deals/v1/deal/recent/modified"
     UPDATE_DEAL_PATH = '/deals/v1/deal/:deal_id'
+    BATCH_UPDATE_PATH = '/deals/v1/batch-async/update'
     ASSOCIATE_DEAL_PATH = '/deals/v1/deal/:deal_id/associations/:OBJECTTYPE?id=:objectId'
     ASSOCIATED_DEAL_PATH = "/deals/v1/deal/associated/:objectType/:objectId"
 
@@ -108,6 +109,33 @@ module Hubspot
         params = { objectType: objectType, objectId: object.id }
         response = Hubspot::Connection.get_json(path, params)
         response["results"].map { |deal_id| find(deal_id) }
+      end
+
+      # Updates the properties of multiple deals
+      # NOTE: Up to 100 deals can be updated in a single request. There is no limit to the number of properties that can be updated per deal.
+      # {https://developers.hubspot.com/docs/methods/deals/batch-update-deals}
+      # @param deals [Hash] hash of deals to update
+      # Returns a 202 Accepted response on success.
+      private def batch_update!(deals)
+        query = deals.map do |deal|
+          deal_hash = deal.with_indifferent_access
+          if deal_hash[:vid]
+            # For consistency - Since vid has been used everywhere.
+            deal_param = {
+              objectId: deal_hash[:vid],
+              properties: Hubspot::Utils.hash_to_properties(deal_hash.except(:vid).stringify_keys!, key_name: "name"),
+            }
+          elsif deal_hash[:objectId]
+            deal_param = {
+              objectId: deal_hash[:objectId],
+              properties: Hubspot::Utils.hash_to_properties(deal_hash.except(:objectId).stringify_keys!, key_name: "name"),
+            }
+          else
+            raise Hubspot::InvalidParams, "expecting vid or objectId for company"
+          end
+          deal_param
+        end
+        Hubspot::Connection.post_json(BATCH_UPDATE_PATH, params: {}, body: query)
       end
     end
 
